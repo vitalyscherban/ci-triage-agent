@@ -66,6 +66,42 @@ All four failures are correctly resolved to their real `(path, line)` and
 given a concrete diagnosis in every run above - the savings do not come at
 the expense of the triage result.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    A[CI log file<br/>pytest -v output] --> B[log_parser.py]
+    R[(Repo checkout on disk)] --> D[repo_reader.py]
+    B -->|"extract_failure_blocks<br/>(pruning)"| B1[Per-test FAILURES blocks<br/>+ short summary]
+    B -->|extract_stack_frames| B2[StackFrame list<br/>path, line, test_name, exc_type]
+    B2 --> D
+    D -->|"read_window<br/>(targeted reads)"| D1[±radius lines<br/>around faulting line]
+    D1 --> E[compaction.py]
+    E -->|"compact_tool_history<br/>(protected_recent=1)"| E1[Older reads to 2-line summaries<br/>Newest read stays full text]
+    F[cache.py<br/>PromptPrefixCache] -->|"charge(prefix_key)<br/>(prompt-prefix caching)"| G
+    B1 --> G[agent.py<br/>TriageAgent.run]
+    E1 --> G
+    G --> H[providers/base.py<br/>DiagnosisRequest]
+    H --> I{MockProvider<br/>or OpenAIProvider}
+    I --> J[report.py<br/>TriageReport]
+    J --> K[CLI output<br/>text / markdown / json]
+```
+
+| Module | Responsibility |
+|---|---|
+| `log_parser.py` | Prune a real pytest log to its `FAILURES` blocks and resolve each failure to a `StackFrame` (path, line, test name, exception) |
+| `repo_reader.py` | Read source from the real repo checkout: bounded windows or whole files |
+| `compaction.py` | Collapse earlier per-failure reads to 2-line summaries; keep only the most recent at full fidelity |
+| `cache.py` | Track prompt-prefix warmth across calls and across separate CLI invocations (a JSON file on disk) |
+| `tokens.py` | Count tokens with `tiktoken` if installed, else a documented word-count heuristic |
+| `providers/` | Pluggable diagnosis backends: `MockProvider` (offline, rule-based) and `OpenAIProvider` (real HTTP call) |
+| `agent.py` | Orchestrates parsing, reads, compaction, caching, and the provider into one triage run |
+| `report.py` | Renders a `TriageReport` as text/Markdown/JSON and estimates illustrative USD cost |
+| `cli.py` | `argparse`-based entry point (`ci-triage-agent run ...`) |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full data model,
+a step-by-step `TriageAgent.run()` walkthrough, and extension points.
+
 ## The four techniques, and where they live
 
 | Technique | What it does here | Implementation |
@@ -78,9 +114,6 @@ the expense of the triage result.
 `agent.TriageAgent.run()` ties these together, one model call per failing
 test; `agent.TriageAgent._naive_total_tokens()` computes the same
 counterfactual "what would a naive agent have spent" baseline used above.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full module map,
-data-flow diagram, and design rationale.
 
 ## Tests
 
