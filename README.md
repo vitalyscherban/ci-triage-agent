@@ -79,6 +79,9 @@ the expense of the triage result.
 test; `agent.TriageAgent._naive_total_tokens()` computes the same
 counterfactual "what would a naive agent have spent" baseline used above.
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full module map,
+data-flow diagram, and design rationale.
+
 ## Tests
 
 ```powershell
