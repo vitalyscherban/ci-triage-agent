@@ -66,6 +66,40 @@ All four failures are correctly resolved to their real `(path, line)` and
 given a concrete diagnosis in every run above - the savings do not come at
 the expense of the triage result.
 
+### Real-world pricing
+
+The table above uses the repo's illustrative flat rate (`estimate_cost_usd`
+in `report.py`), which only counts input tokens. Re-running the same command
+with the `tiktoken` extra installed gives exact counts; applying them to
+Azure OpenAI's GPT-4o-mini pricing as of August 2026 - $0.15 / 1M input
+tokens, $0.60 / 1M output tokens
+([source](https://azure.microsoft.com/en-us/pricing/details/azure-openai/))
+- and the measured ~339 output tokens for the 4 diagnoses (the model's
+answer length, which none of the four techniques touch):
+
+| Run | Input tokens | Output tokens | Total cost | vs. naive |
+|---|---:|---:|---:|---:|
+| Naive | 82,817 | 339 | $0.01263 | - |
+| Optimized, cold cache | 5,244 | 339 | $0.00099 | **92.2% saved** |
+| Optimized, warm cache | 5,141 | 339 | $0.00097 | **92.3% saved** |
+
+Total savings (~92%) run slightly below the input-token savings (~94%)
+because output tokens are a fixed cost none of the techniques reduce.
+Extrapolated to CI volume at this repo's size:
+
+| Triage runs/month | Naive cost | Optimized cost | Saved |
+|---:|---:|---:|---:|
+| 100 | $1.26 | $0.10 | $1.16 |
+| 1,000 | $12.63 | $0.99 | $11.64 |
+| 10,000 | $126.30 | $9.90 | $116.40 |
+
+These dollar amounts are small because `examples/sample_repo` is tiny. The
+percentage savings is the durable result: naive cost scales with total repo
+size (it dumps every `.py` file) and log size, while optimized cost scales
+with only the number of failures x a fixed read window - independent of
+repo size. On a real repo with thousands of files, the gap widens, not
+narrows.
+
 ## Architecture
 
 ```mermaid
